@@ -36,6 +36,7 @@ switch($action) {
             case 'edit': $controller->edit(); break;
             case 'store': $controller->store(); break;
             case 'update': $controller->update(); break;
+            case 'delete': $controller->delete(); break;
         }
         break;
         
