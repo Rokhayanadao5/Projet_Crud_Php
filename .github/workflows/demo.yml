@@ -1,51 +1,53 @@
-name: Docker Build & Push
+name: Docker Build & Push with Git Tags
 
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
 
 jobs:
-  docker:
+  build:
     runs-on: ubuntu-latest
-
+    
+    outputs:
+      docker-tag: ${{ steps.version.outputs.tag }}
+    
     steps:
-    # 1️⃣ Récupérer le code
     - uses: actions/checkout@v4
-
-    # 2️⃣ Login Docker Hub
+    
+    - name: Get Docker tag
+      id: version
+      run: |
+        if [[ ${{ github.ref_type }} == 'tag' ]]; then
+          # Pour un tag Git (ex: v1.2.3)
+          TAG=${GITHUB_REF#refs/tags/}
+          TAG=${TAG#v}  # Enlève le 'v' du début
+        else
+          # Pour un push sur main (sans tag)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="latest-${SHORT_SHA}"
+        fi
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+    
     - name: Login to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
-
-    # 3️⃣ Build et push des images
-    - name: Build and push Docker images
+    
+    - name: Build and push
       run: |
-        # Build de l'image
-        docker build -t ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:latest ./php/
+        DOCKER_TAG="${{ steps.version.outputs.tag }}"
         
-        # Tag avec le commit hash pour version unique
-        docker tag ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:latest ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:${{ github.sha }}
+        # Build avec le tag approprié
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:$DOCKER_TAG ./php/
         
-        # Push des images
-        docker push ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:latest
-        docker push ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:${{ github.sha }}
-
-    # 4️⃣ (Optionnel) Déploiement automatique sur serveur
-    # nécessite un serveur SSH et clé dans secrets.DEPLOY_KEY
-    - name: Deploy to server
-      if: github.ref == 'refs/heads/main'
-      uses: appleboy/ssh-action@v0.1.7
-      with:
-        host: ${{ secrets.SERVER_HOST }}
-        username: ${{ secrets.SERVER_USER }}
-        key: ${{ secrets.DEPLOY_KEY }}
-        script: |
-          docker stop php_app || true
-          docker rm php_app || true
-          docker pull ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:latest
-          docker run -d --name php_app -p 8080:80 \
-            -v /srv/php_app/src:/var/www/html \
-            -v db_data:/var/lib/mysql \
-            ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:latest
+        # Push l'image
+        docker push ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:$DOCKER_TAG
+        
+        # Si c'est un tag Git, push aussi comme 'latest'
+        if [[ ${{ github.ref_type }} == 'tag' ]]; then
+          docker tag ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:$DOCKER_TAG \
+                     ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/mon-projet-php:latest
+        fi
