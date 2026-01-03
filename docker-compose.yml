@@ -1,0 +1,66 @@
+services:
+  # Service PHP-FPM
+  php_app:
+    build: ./php
+    container_name: php_app
+    volumes:
+      - ./src:/var/www/html
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  # Service Nginx
+  nginx_app:
+    image: nginx:alpine
+    container_name: nginx_app
+    ports:
+      - "8081:80"  # Votre application ici
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./src:/var/www/html
+    depends_on:
+      - php_app
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  # Service MySQL - CHANGÉ LE PORT à 3307 (3306 est probablement déjà utilisé)
+  mysql_db:
+    image: mysql:8.0
+    container_name: mysql_db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: crud_app  # Nom plus approprié
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: userpassword
+    ports:
+      - "3307:3306"  # PORT EXTERNE CHANGÉ À 3307
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql  # Script SQL
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  # Service phpMyAdmin - CORRIGÉ LE NOM DU HOST
+  phpmyadmin_app:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin_app
+    environment:
+      PMA_HOST: mysql_db  # CORRECT : nom du service MySQL
+      PMA_PORT: 3306      # Port interne
+    ports:
+      - "8082:80"  # phpMyAdmin ici
+    depends_on:
+      - mysql_db
+    networks:
+      - app_network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  app_network:
+    driver: bridge
